@@ -1,0 +1,29 @@
+{
+  "name": "unofficial-gospel-library-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for accessing Gospel Library scriptures and resources",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "cheerio": "^1.0.0",
+    "node-fetch": "^3.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "gospel-library",
+    "scriptures",
+    "lds"
+  ],
+  "author": "",
+  "license": "MIT"
+}
