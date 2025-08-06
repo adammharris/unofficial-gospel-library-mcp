@@ -63,6 +63,14 @@ const SCRIPTURE_COLLECTIONS = {
   'pearl-of-great-price': 'pgp'
 };
 
+const SCRIPTURE_BOOKS = {
+  'old-testament': ['gen', 'ex', 'lev', 'num', 'deut', 'josh', 'judg', 'ruth', '1-sam', '2-sam', '1-kgs', '2-kgs', '1-chr', '2-chr', 'ezra', 'neh', 'esth', 'job', 'ps', 'prov', 'eccl', 'song', 'isa', 'jer', 'lam', 'ezek', 'dan', 'hosea', 'joel', 'amos', 'obad', 'jonah', 'micah', 'nahum', 'hab', 'zeph', 'hag', 'zech', 'mal'],
+  'new-testament': ['matt', 'mark', 'luke', 'john', 'acts', 'rom', '1-cor', '2-cor', 'gal', 'eph', 'philip', 'col', '1-thes', '2-thes', '1-tim', '2-tim', 'titus', 'philem', 'heb', 'james', '1-pet', '2-pet', '1-jn', '2-jn', '3-jn', 'jude', 'rev'],
+  'book-of-mormon': ['1-ne', '2-ne', 'jacob', 'enos', 'jarom', 'omni', 'w-of-m', 'mosiah', 'alma', 'hel', '3-ne', '4-ne', 'morm', 'ether', 'moro'],
+  'doctrine-and-covenants': ['dc'],
+  'pearl-of-great-price': ['moses', 'abr', 'js-m', 'js-h', 'a-of-f']
+};
+
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
@@ -79,7 +87,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             book: {
               type: 'string',
-              description: 'Book abbreviation or name (e.g., "1-ne", "alma", "matt", "gen")'
+              description: 'Book abbreviation or name (e.g., "1-ne", "alma", "matt", "gen")',
+              enum: [
+                ...SCRIPTURE_BOOKS['old-testament'],
+                ...SCRIPTURE_BOOKS['new-testament'],
+                ...SCRIPTURE_BOOKS['book-of-mormon'],
+                ...SCRIPTURE_BOOKS['doctrine-and-covenants'],
+                ...SCRIPTURE_BOOKS['pearl-of-great-price']
+              ]
             },
             chapter: {
               type: 'number',
@@ -130,27 +145,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           },
           required: ['query']
         }
-      },
-      {
-        name: 'list_books',
-        description: 'List available books in a scripture collection',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            collection: {
-              type: 'string',
-              enum: Object.keys(SCRIPTURE_COLLECTIONS),
-              description: 'Scripture collection to list books for'
-            },
-            language: {
-              type: 'string',
-              description: 'Language code (default: eng)',
-              default: 'eng',
-              optional: true
-            }
-          },
-          required: ['collection']
-        }
       }
     ] satisfies Tool[]
   };
@@ -164,8 +158,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return await getScripture(args);
     case 'search_scriptures':
       return await searchScriptures(args);
-    case 'list_books':
-      return await listBooks(args);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -193,7 +185,8 @@ async function getScripture(args: any) {
     // Collect all verses first
     const allVerses: any[] = [];
     $('.verse').each((_, element) => {
-      const verseNum = $(element).attr('data-aid')?.match(/p(\d+)/)?.[1];
+      const id = $(element).attr('id');
+      const verseNum = id?.match(/p(\d+)/)?.[1];
       const text = $(element).text().trim();
       if (verseNum && text) {
         allVerses.push({
@@ -293,60 +286,6 @@ async function searchScriptures(args: any) {
   }
 }
 
-async function listBooks(args: any) {
-  const { collection, language = 'eng' } = args;
-  
-  const collectionCode = SCRIPTURE_COLLECTIONS[collection as keyof typeof SCRIPTURE_COLLECTIONS];
-  if (!collectionCode) {
-    throw new Error(`Invalid collection: ${collection}`);
-  }
-
-  const url = `${BASE_URL}/scriptures/${collectionCode}?lang=${language}`;
-  
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch collection: ${response.status} ${response.statusText}`);
-    }
-    
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    
-    const books: any[] = [];
-    $(`a[href*="/study/scriptures/${collectionCode}/"]`).each((_, element) => {
-      const title = $(element).text().trim();
-      const href = $(element).attr('href');
-      
-      if (title && href && href.includes(`/scriptures/${collectionCode}/`)) {
-        const bookCode = href.split('/').pop()?.split('?')[0];
-        // Only include main book links, not chapter links
-        if (bookCode && bookCode !== collectionCode && !href.includes(`/${collectionCode}/${bookCode}/`)) {
-          books.push({
-            title,
-            code: bookCode,
-            url: `https://www.churchofjesuschrist.org${href}`
-          });
-        }
-      }
-    });
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            collection,
-            language,
-            books,
-            total: books.length
-          }, null, 2)
-        }
-      ]
-    };
-  } catch (error) {
-    throw new Error(`Error listing books: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
 
 async function main() {
   const transport = new StdioServerTransport();

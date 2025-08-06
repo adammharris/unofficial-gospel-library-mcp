@@ -18,7 +18,7 @@ bun run build
 
 ## Usage
 
-The server provides three main tools:
+The server provides two main tools:
 
 ### 1. get_scripture
 Retrieve scripture text by reference:
@@ -62,16 +62,6 @@ Search for text within scriptures:
 {
   "query": "faith hope charity",
   "collection": "book-of-mormon",
-  "language": "eng"
-}
-```
-
-### 3. list_books
-List available books in a collection:
-
-```json
-{
-  "collection": "new-testament",
   "language": "eng"
 }
 ```
