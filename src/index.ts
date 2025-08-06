@@ -270,13 +270,14 @@ async function listBooks(args: any) {
     const $ = cheerio.load(html);
     
     const books: any[] = [];
-    $('.content-link').each((_, element) => {
+    $(`a[href*="/study/scriptures/${collectionCode}/"]`).each((_, element) => {
       const title = $(element).text().trim();
       const href = $(element).attr('href');
       
-      if (title && href && href.includes('/scriptures/')) {
+      if (title && href && href.includes(`/scriptures/${collectionCode}/`)) {
         const bookCode = href.split('/').pop()?.split('?')[0];
-        if (bookCode && bookCode !== collectionCode) {
+        // Only include main book links, not chapter links
+        if (bookCode && bookCode !== collectionCode && !href.includes(`/${collectionCode}/${bookCode}/`)) {
           books.push({
             title,
             code: bookCode,
