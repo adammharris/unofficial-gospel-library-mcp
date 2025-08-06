@@ -33,6 +33,28 @@ Retrieve scripture text by reference:
 }
 ```
 
+Or retrieve verse ranges:
+```json
+{
+  "collection": "book-of-mormon", 
+  "book": "1-ne",
+  "chapter": 3,
+  "verseRange": "7-10",
+  "language": "eng"
+}
+```
+
+Or get first/last verses:
+```json
+{
+  "collection": "book-of-mormon",
+  "book": "1-ne", 
+  "chapter": 3,
+  "verseRange": "first:3",
+  "language": "eng"
+}
+```
+
 ### 2. search_scriptures
 Search for text within scriptures:
 

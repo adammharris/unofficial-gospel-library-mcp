@@ -24,6 +24,37 @@ const server = new Server(
 
 const BASE_URL = 'https://www.churchofjesuschrist.org/study';
 
+function parseVerseRange(rangeStr: string, allVerses: any[]): any[] {
+  // Handle relative positions like "first:3", "last:3"
+  if (rangeStr.includes(':')) {
+    const [position, countStr] = rangeStr.split(':');
+    const count = parseInt(countStr);
+    
+    if (position === 'first') {
+      return allVerses.slice(0, count);
+    } else if (position === 'last') {
+      return allVerses.slice(-count);
+    }
+  }
+  
+  // Handle numeric ranges like "7-10"
+  if (rangeStr.includes('-')) {
+    const [startStr, endStr] = rangeStr.split('-');
+    const start = parseInt(startStr);
+    const end = parseInt(endStr);
+    
+    return allVerses.filter(v => v.verse >= start && v.verse <= end);
+  }
+  
+  // Handle single number as a range of 1
+  const verseNum = parseInt(rangeStr);
+  if (!isNaN(verseNum)) {
+    return allVerses.filter(v => v.verse === verseNum);
+  }
+  
+  throw new Error(`Invalid verse range format: ${rangeStr}. Use formats like "7-10", "first:3", or "last:3"`);
+}
+
 const SCRIPTURE_COLLECTIONS = {
   'old-testament': 'ot',
   'new-testament': 'nt', 
@@ -37,7 +68,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: 'get_scripture',
-        description: 'Get scripture text from Gospel Library by reference (book, chapter, verse)',
+        description: 'Get scripture text from Gospel Library by reference (book, chapter, verse, or verse ranges)',
         inputSchema: {
           type: 'object',
           properties: {
@@ -57,6 +88,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             verse: {
               type: 'number',
               description: 'Specific verse number (optional - if not provided, returns entire chapter)',
+              optional: true
+            },
+            verseRange: {
+              type: 'string',
+              description: 'Verse range in format "start-end" (e.g., "7-10") or relative positions like "first:3", "last:3"',
               optional: true
             },
             language: {
@@ -136,7 +172,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function getScripture(args: any) {
-  const { collection, book, chapter, verse, language = 'eng' } = args;
+  const { collection, book, chapter, verse, verseRange, language = 'eng' } = args;
   
   const collectionCode = SCRIPTURE_COLLECTIONS[collection as keyof typeof SCRIPTURE_COLLECTIONS];
   if (!collectionCode) {
@@ -154,33 +190,40 @@ async function getScripture(args: any) {
     const html = await response.text();
     const $ = cheerio.load(html);
     
+    // Collect all verses first
+    const allVerses: any[] = [];
+    $('.verse').each((_, element) => {
+      const verseNum = $(element).attr('data-aid')?.match(/p(\d+)/)?.[1];
+      const text = $(element).text().trim();
+      if (verseNum && text) {
+        allVerses.push({
+          verse: parseInt(verseNum),
+          text: text
+        });
+      }
+    });
+
     let result: any = {
-      reference: `${collection} ${book} ${chapter}${verse ? ':' + verse : ''}`,
+      reference: `${collection} ${book} ${chapter}`,
       url: url,
-      language: language
+      language: language,
+      chapterTitle: $('h1').first().text().trim()
     };
 
     if (verse) {
-      const verseElement = $(`#p${verse}`);
-      if (verseElement.length === 0) {
+      const foundVerse = allVerses.find(v => v.verse === verse);
+      if (!foundVerse) {
         throw new Error(`Verse ${verse} not found in ${collection} ${book} ${chapter}`);
       }
-      result.text = verseElement.text().trim();
+      result.reference += `:${verse}`;
+      result.text = foundVerse.text;
       result.verse = verse;
-    } else {
-      const verses: any[] = [];
-      $('.verse').each((_, element) => {
-        const verseNum = $(element).attr('data-aid')?.match(/p(\d+)/)?.[1];
-        const text = $(element).text().trim();
-        if (verseNum && text) {
-          verses.push({
-            verse: parseInt(verseNum),
-            text: text
-          });
-        }
-      });
+    } else if (verseRange) {
+      const verses = parseVerseRange(verseRange, allVerses);
       result.verses = verses;
-      result.chapterTitle = $('h1').first().text().trim();
+      result.reference += `:${verses[0].verse}-${verses[verses.length - 1].verse}`;
+    } else {
+      result.verses = allVerses;
     }
 
     return {
