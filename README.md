@@ -1,13 +1,11 @@
 # Unofficial Gospel Library MCP Server
 
-An MCP (Model Context Protocol) server for accessing scriptures and resources from the Gospel Library of The Church of Jesus Christ of Latter-day Saints.
+An MCP (Model Context Protocol) server for accessing scriptures from the Gospel Library of The Church of Jesus Christ of Latter-day Saints.
 
 ## Features
 
-- **Get Scripture**: Retrieve specific verses or entire chapters from any scripture collection
-- **Search Scriptures**: Search for text within Gospel Library scriptures  
-- **List Books**: Get a list of available books in any scripture collection
-- **Multi-language Support**: Access scriptures in different languages (default: English)
+- **Get Scripture Text**: Retrieve specific verses or entire chapters from any book of scripture.
+- **Get Book Info**: Get information about a book of scripture, including the number of chapters and verses in each chapter.
 
 ## Installation
 
@@ -20,49 +18,25 @@ bun run build
 
 The server provides two main tools:
 
-### 1. get_scripture
+### 1. get_book_info
+Get information about a book of scripture:
+
+```json
+{
+  "collection": "book-of-mormon",
+  "book": "1 Nephi"
+}
+```
+
+### 2. get_scripture_text
 Retrieve scripture text by reference:
 
 ```json
 {
   "collection": "book-of-mormon",
-  "book": "1-ne",
+  "book": "1 Nephi",
   "chapter": 3,
-  "verse": 7,
-  "language": "eng"
-}
-```
-
-Or retrieve verse ranges:
-```json
-{
-  "collection": "book-of-mormon", 
-  "book": "1-ne",
-  "chapter": 3,
-  "verseRange": "7-10",
-  "language": "eng"
-}
-```
-
-Or get first/last verses:
-```json
-{
-  "collection": "book-of-mormon",
-  "book": "1-ne", 
-  "chapter": 3,
-  "verseRange": "first:3",
-  "language": "eng"
-}
-```
-
-### 2. search_scriptures
-Search for text within scriptures:
-
-```json
-{
-  "query": "faith hope charity",
-  "collection": "book-of-mormon",
-  "language": "eng"
+  "verse": 7
 }
 ```
 
@@ -98,6 +72,4 @@ Add to your MCP client configuration:
 
 ## Notes
 
-- This is an unofficial implementation that scrapes content from the public Gospel Library website
-- Respects the Church's terms of service for educational and personal use
-- Language codes follow ISO 639-3 standard (e.g., "eng", "spa", "por")
+- This server uses JSON data from the [scriptures-json](https://github.com/bcbooks/scriptures-json) repository.

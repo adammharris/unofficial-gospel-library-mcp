@@ -7,22 +7,9 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import fetch from 'node-fetch';
-import * as cheerio from 'cheerio';
-
-const server = new Server(
-  {
-    name: 'unofficial-gospel-library-mcp',
-    version: '1.0.0',
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  }
-);
-
-const BASE_URL = 'https://www.churchofjesuschrist.org/study';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 function parseVerseRange(rangeStr: string, allVerses: any[]): any[] {
   // Handle relative positions like "first:3", "last:3"
@@ -55,241 +42,225 @@ function parseVerseRange(rangeStr: string, allVerses: any[]): any[] {
   throw new Error(`Invalid verse range format: ${rangeStr}. Use formats like "7-10", "first:3", or "last:3"`);
 }
 
-const SCRIPTURE_COLLECTIONS = {
-  'old-testament': 'ot',
-  'new-testament': 'nt', 
-  'book-of-mormon': 'bofm',
-  'doctrine-and-covenants': 'dc-testament',
-  'pearl-of-great-price': 'pgp'
-};
-
-const SCRIPTURE_BOOKS = {
-  'old-testament': ['gen', 'ex', 'lev', 'num', 'deut', 'josh', 'judg', 'ruth', '1-sam', '2-sam', '1-kgs', '2-kgs', '1-chr', '2-chr', 'ezra', 'neh', 'esth', 'job', 'ps', 'prov', 'eccl', 'song', 'isa', 'jer', 'lam', 'ezek', 'dan', 'hosea', 'joel', 'amos', 'obad', 'jonah', 'micah', 'nahum', 'hab', 'zeph', 'hag', 'zech', 'mal'],
-  'new-testament': ['matt', 'mark', 'luke', 'john', 'acts', 'rom', '1-cor', '2-cor', 'gal', 'eph', 'philip', 'col', '1-thes', '2-thes', '1-tim', '2-tim', 'titus', 'philem', 'heb', 'james', '1-pet', '2-pet', '1-jn', '2-jn', '3-jn', 'jude', 'rev'],
-  'book-of-mormon': ['1-ne', '2-ne', 'jacob', 'enos', 'jarom', 'omni', 'w-of-m', 'mosiah', 'alma', 'hel', '3-ne', '4-ne', 'morm', 'ether', 'moro'],
-  'doctrine-and-covenants': ['dc'],
-  'pearl-of-great-price': ['moses', 'abr', 'js-m', 'js-h', 'a-of-f']
-};
-
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: 'get_scripture',
-        description: 'Get scripture text from Gospel Library by reference (book, chapter, verse, or verse ranges)',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            collection: {
-              type: 'string',
-              enum: Object.keys(SCRIPTURE_COLLECTIONS),
-              description: 'Scripture collection (old-testament, new-testament, book-of-mormon, doctrine-and-covenants, pearl-of-great-price)'
-            },
-            book: {
-              type: 'string',
-              description: 'Book abbreviation or name (e.g., "1-ne", "alma", "matt", "gen")',
-              enum: [
-                ...SCRIPTURE_BOOKS['old-testament'],
-                ...SCRIPTURE_BOOKS['new-testament'],
-                ...SCRIPTURE_BOOKS['book-of-mormon'],
-                ...SCRIPTURE_BOOKS['doctrine-and-covenants'],
-                ...SCRIPTURE_BOOKS['pearl-of-great-price']
-              ]
-            },
-            chapter: {
-              type: 'number',
-              description: 'Chapter number'
-            },
-            verse: {
-              type: 'number',
-              description: 'Specific verse number (optional - if not provided, returns entire chapter)',
-              optional: true
-            },
-            verseRange: {
-              type: 'string',
-              description: 'Verse range in format "start-end" (e.g., "7-10") or relative positions like "first:3", "last:3"',
-              optional: true
-            },
-            language: {
-              type: 'string',
-              description: 'Language code (default: eng)',
-              default: 'eng',
-              optional: true
-            }
-          },
-          required: ['collection', 'book', 'chapter']
-        }
-      },
-      {
-        name: 'search_scriptures',
-        description: 'Search for text within Gospel Library scriptures',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: 'Text to search for in scriptures'
-            },
-            collection: {
-              type: 'string',
-              enum: Object.keys(SCRIPTURE_COLLECTIONS),
-              description: 'Scripture collection to search within (optional - searches all if not specified)',
-              optional: true
-            },
-            language: {
-              type: 'string',
-              description: 'Language code (default: eng)',
-              default: 'eng',
-              optional: true
-            }
-          },
-          required: ['query']
-        }
-      }
-    ] satisfies Tool[]
-  };
-});
-
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  switch (name) {
-    case 'get_scripture':
-      return await getScripture(args);
-    case 'search_scriptures':
-      return await searchScriptures(args);
-    default:
-      throw new Error(`Unknown tool: ${name}`);
-  }
-});
-
-async function getScripture(args: any) {
-  const { collection, book, chapter, verse, verseRange, language = 'eng' } = args;
-  
-  const collectionCode = SCRIPTURE_COLLECTIONS[collection as keyof typeof SCRIPTURE_COLLECTIONS];
-  if (!collectionCode) {
-    throw new Error(`Invalid collection: ${collection}`);
-  }
-
-  const url = `${BASE_URL}/scriptures/${collectionCode}/${book}/${chapter}?lang=${language}`;
-  
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch scripture: ${response.status} ${response.statusText}`);
-    }
-    
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    
-    // Collect all verses first
-    const allVerses: any[] = [];
-    $('.verse').each((_, element) => {
-      const id = $(element).attr('id');
-      const verseNum = id?.match(/p(\d+)/)?.[1];
-      const text = $(element).text().trim();
-      if (verseNum && text) {
-        allVerses.push({
-          verse: parseInt(verseNum),
-          text: text
-        });
-      }
-    });
-
-    let result: any = {
-      reference: `${collection} ${book} ${chapter}`,
-      url: url,
-      language: language,
-      chapterTitle: $('h1').first().text().trim()
-    };
-
-    if (verse) {
-      const foundVerse = allVerses.find(v => v.verse === verse);
-      if (!foundVerse) {
-        throw new Error(`Verse ${verse} not found in ${collection} ${book} ${chapter}`);
-      }
-      result.reference += `:${verse}`;
-      result.text = foundVerse.text;
-      result.verse = verse;
-    } else if (verseRange) {
-      const verses = parseVerseRange(verseRange, allVerses);
-      result.verses = verses;
-      result.reference += `:${verses[0].verse}-${verses[verses.length - 1].verse}`;
-    } else {
-      result.verses = allVerses;
-    }
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(result, null, 2)
-        }
-      ]
-    };
-  } catch (error) {
-    throw new Error(`Error fetching scripture: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-async function searchScriptures(args: any) {
-  const { query, collection, language = 'eng' } = args;
-  
-  let searchUrl = `https://www.churchofjesuschrist.org/search?facet=scriptures&lang=${language}&page=1&query=${encodeURIComponent(query)}&type=web`;
-  if (collection) {
-    const collectionCode = SCRIPTURE_COLLECTIONS[collection as keyof typeof SCRIPTURE_COLLECTIONS];
-    if (collectionCode) {
-      searchUrl += `&collections=${collectionCode}`;
-    }
-  }
-
-  try {
-    const response = await fetch(searchUrl);
-    if (!response.ok) {
-      throw new Error(`Search failed: ${response.status} ${response.statusText}`);
-    }
-    
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    
-    const results: any[] = [];
-    $('.search-result').each((_, element) => {
-      const title = $(element).find('.result-title').text().trim();
-      const snippet = $(element).find('.result-snippet').text().trim();
-      const link = $(element).find('a').attr('href');
-      
-      if (title && snippet) {
-        results.push({
-          title,
-          snippet,
-          url: link ? `https://www.churchofjesuschrist.org${link}` : null
-        });
-      }
-    });
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            query,
-            language,
-            collection: collection || 'all',
-            results,
-            total: results.length
-          }, null, 2)
-        }
-      ]
-    };
-  } catch (error) {
-    throw new Error(`Error searching scriptures: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-
 async function main() {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+
+  const scriptureData: any = {};
+  const collections = [
+    'book-of-mormon',
+    'doctrine-and-covenants',
+    'new-testament',
+    'old-testament',
+    'pearl-of-great-price',
+  ];
+
+  for (const collection of collections) {
+    try {
+      // Try current directory first (for compiled code in dist/)
+      let filePath = path.join(__dirname, `${collection}.json`);
+      let data;
+      
+      try {
+        data = await fs.readFile(filePath, 'utf-8');
+      } catch {
+        // If not found, try src directory (for development)
+        filePath = path.join(__dirname, '..', 'src', `${collection}.json`);
+        data = await fs.readFile(filePath, 'utf-8');
+      }
+      
+      scriptureData[collection] = JSON.parse(data);
+      console.log(`Loaded ${collection} with ${JSON.parse(data).books?.length || 0} books`);
+    } catch (error) {
+      console.error(`Error loading ${collection}.json:`, error);
+      throw error;
+    }
+  }
+
+  const server = new Server(
+    {
+      name: 'unofficial-gospel-library-mcp',
+      version: '1.0.0',
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    console.log('scriptureData keys:', Object.keys(scriptureData));
+    const booksByCollection: { [key: string]: string[] } = {};
+    const allBooks: string[] = [];
+    
+    for (const collection in scriptureData) {
+      if (scriptureData[collection] && scriptureData[collection].books) {
+        booksByCollection[collection] = scriptureData[collection].books.map((book: any) => book.book);
+        allBooks.push(...booksByCollection[collection]);
+      } else {
+        console.error(`Invalid data structure for collection: ${collection}`);
+        booksByCollection[collection] = [];
+      }
+    }
+
+    return {
+      tools: [
+        {
+          name: 'get_book_info',
+          description: 'IMPORTANT: Always use this tool to get accurate chapter and verse counts before referencing scriptures. Do NOT rely on your training data - scripture versions and verse numbering can vary. This tool provides the definitive structure for this specific scripture dataset.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              collection: {
+                type: 'string',
+                description: 'Scripture collection',
+                enum: Object.keys(scriptureData),
+              },
+              book: {
+                type: 'string',
+                description: 'Book name - use get_book_info first to see available books in each collection',
+                enum: allBooks,
+              },
+            },
+            required: ['collection', 'book'],
+          },
+        },
+        {
+          name: 'get_scripture_text',
+          description: 'Get the actual text of scripture verses. ALWAYS use get_book_info first to verify valid chapter and verse ranges - do not assume you know the correct ranges from training data.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              collection: {
+                type: 'string',
+                description: 'Scripture collection',
+                enum: Object.keys(scriptureData),
+              },
+              book: {
+                type: 'string',
+                description: 'Book name - must match exactly as returned by get_book_info',
+                enum: allBooks,
+              },
+              chapter: {
+                type: 'number',
+                description: 'Chapter number - use get_book_info to verify valid chapter range for this book',
+                minimum: 1,
+              },
+              verse: {
+                type: 'number',
+                description: 'Verse number (optional) - use get_book_info to verify valid verse range for this chapter',
+                minimum: 1,
+                optional: true,
+              },
+              verseRange: {
+                type: 'string',
+                description: 'Verse range in format "start-end" (e.g., "7-10") or relative positions like "first:3", "last:3"',
+                optional: true
+              },
+            },
+            required: ['collection', 'book', 'chapter'],
+          },
+        },
+      ] satisfies Tool[],
+    };
+  });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+
+    switch (name) {
+      case 'get_book_info':
+        return await getBookInfo(args, scriptureData);
+      case 'get_scripture_text':
+        return await getScriptureText(args, scriptureData);
+      default:
+        throw new Error(`Unknown tool: ${name}`);
+    }
+  });
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
+}
+
+async function getBookInfo(args: any, scriptureData: any) {
+  const { collection, book } = args;
+  const bookData = scriptureData[collection]?.books.find((b: any) => b.book === book);
+
+  if (!bookData) {
+    throw new Error(`Book not found: ${book} in ${collection}`);
+  }
+
+  const chapterInfo = bookData.chapters.map((c: any) => ({
+    chapter: c.chapter,
+    verses: c.verses.length,
+  }));
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(
+          {
+            book: bookData.book,
+            chapters: chapterInfo.length,
+            chapter_details: chapterInfo,
+          },
+          null,
+          2
+        ),
+      },
+    ],
+  };
+}
+
+async function getScriptureText(args: any, scriptureData: any) {
+  const { collection, book, chapter, verse, verseRange } = args;
+  const bookData = scriptureData[collection]?.books.find((b: any) => b.book === book);
+
+  if (!bookData) {
+    throw new Error(`Book not found: ${book} in ${collection}`);
+  }
+
+  const chapterData = bookData.chapters.find((c: any) => c.chapter === chapter);
+
+  if (!chapterData) {
+    throw new Error(`Chapter not found: ${chapter} in ${book}`);
+  }
+
+  if (verse) {
+    const verseData = chapterData.verses.find((v: any) => v.verse === verse);
+    if (!verseData) {
+      throw new Error(`Verse not found: ${verse} in ${book} ${chapter}`);
+    }
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(verseData, null, 2),
+        },
+      ],
+    };
+  } else if (verseRange) {
+    const verses = parseVerseRange(verseRange, chapterData.verses);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(verses, null, 2),
+        },
+      ],
+    };
+  }
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(chapterData, null, 2),
+      },
+    ],
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

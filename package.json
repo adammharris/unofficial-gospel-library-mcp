@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/*.json dist/",
     "dev": "tsc --watch",
     "start": "node dist/index.js"
   },
