@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc && cp src/*.json dist/",
+    "build": "tsc && cp src/*.json dist/ && mkdir -p dist/general-conference-talks && cp -R src/general-conference-talks/* dist/general-conference-talks/",
     "dev": "tsc --watch",
     "start": "node dist/index.js"
   },
