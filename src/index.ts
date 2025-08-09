@@ -173,7 +173,8 @@ async function main() {
     }
 
     const conferenceSessions = Object.keys(conferenceData.sessions).sort();
-    const allTalkTitles = conferenceData.allTalks.map(t => t.title);
+  const allTalkTitles = conferenceData.allTalks.map(t => t.title);
+  const allTalkSlugs = conferenceData.allTalks.map(t => t.slug);
 
     return {
       tools: [
@@ -266,7 +267,7 @@ async function main() {
         },
         {
           name: 'get_conference_talk',
-          description: 'Retrieve a General Conference talk (optionally specific paragraphs). Use list_conference_talks first to discover sessions and exact titles.',
+          description: 'Retrieve a General Conference talk (optionally specific paragraphs). Provide either exact title (with smart quotes if present) OR slug. If exact match fails the server will try a normalized fuzzy match.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -277,8 +278,15 @@ async function main() {
               },
               title: {
                 type: 'string',
-                description: 'Exact talk title',
+                description: 'Exact talk title as listed (may contain smart quotes). If unsure use slug instead.',
                 enum: allTalkTitles,
+                optional: true
+              },
+              slug: {
+                type: 'string',
+                description: 'File-name style slug (e.g., thus-shall-my-church-be-called). Use list_conference_talks to discover.',
+                enum: allTalkSlugs,
+                optional: true
               },
               paragraph: {
                 type: 'number',
@@ -292,7 +300,7 @@ async function main() {
                 optional: true
               }
             },
-            required: ['session', 'title'],
+            required: ['session'],
           },
         },
         {
@@ -505,11 +513,37 @@ async function listConferenceTalks(args: any, conferenceData: ConferenceData) {
 }
 
 async function getConferenceTalk(args: any, conferenceData: ConferenceData) {
-  const { session, title, paragraph, paragraphRange } = args;
+  const { session, title, slug, paragraph, paragraphRange } = args;
   const talks = conferenceData.sessions[session];
   if (!talks) throw new Error(`Session not found: ${session}`);
-  const talk = talks.find(t => t.title === title);
-  if (!talk) throw new Error(`Talk title not found in ${session}: ${title}`);
+
+  const normalize = (s: string) => s
+    .toLowerCase()
+    .replace(/[“”"']/g, '"') // normalize quotes
+    .replace(/[^a-z0-9"\s]+/g, ' ') // remove punctuation except quotes
+    .replace(/\s+/g, ' ') // collapse whitespace
+    .trim();
+
+  let talk: ConferenceTalkMeta | undefined;
+  if (slug) {
+    talk = talks.find(t => t.slug === slug);
+  }
+  if (!talk && title) {
+    // First try exact title
+    talk = talks.find(t => t.title === title);
+    if (!talk) {
+      // Try normalized fuzzy match
+      const normTitle = normalize(title);
+      talk = talks.find(t => normalize(t.title) === normTitle);
+      if (!talk) {
+        // startsWith/contains fallback
+        talk = talks.find(t => normalize(t.title).includes(normTitle));
+      }
+    }
+  }
+  if (!talk) {
+    throw new Error(`Talk not found in ${session}. Provided title='${title || ''}' slug='${slug || ''}'. Use list_conference_talks to enumerate.`);
+  }
 
   if (paragraph) {
     if (paragraph < 1 || paragraph > talk.body.length) throw new Error(`Paragraph out of range 1-${talk.body.length}`);
